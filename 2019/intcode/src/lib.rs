@@ -14,6 +14,7 @@ pub struct Computer {
     code: Vec<i64>,
     input: VecDeque<i64>,
     relative_base: i64,
+    halted: bool,
 }
 
 pub struct Input(Sender<i64>);
@@ -64,6 +65,7 @@ impl Computer {
             code,
             input: VecDeque::new(),
             relative_base: 0,
+            halted: false,
         }
     }
 
@@ -179,11 +181,18 @@ impl Computer {
     }
 
     pub fn run(&mut self) -> Action {
+        if self.halted {
+            return Action::Halt
+        }
+
         loop {
             let instruction = self.fetch_instruction();
 
             match instruction {
-                Instruction::Halt => return Action::Halt,
+                Instruction::Halt => {
+                    self.halted = true;
+                    return Action::Halt
+                },
                 Instruction::Add(a, b, target) => {
                     let lhs = self.evaluate(a);
                     let rhs = self.evaluate(b);
