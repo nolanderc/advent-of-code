@@ -1,12 +1,8 @@
 fn main() {
-    use std::io::Read;
-    let mut input = String::new();
-    std::io::stdin().read_to_string(&mut input).unwrap();
-
-    let count = input
-        .lines()
+    let count = std::io::BufRead::lines(std::io::stdin().lock())
+        .map(Result::unwrap)
         .filter(|line| {
-            let (policy, password) = split_around(line, ':').unwrap();
+            let (policy, password) = split_around(&line, ':').unwrap();
             let policy = Policy::parse(policy).unwrap();
             verify(policy, password.trim())
         })
@@ -41,7 +37,6 @@ impl Policy {
 }
 
 fn verify(policy: Policy, password: &str) -> bool {
-    let count = (password.chars().nth(policy.first - 1) == Some(policy.letter)) as usize
-        + (password.chars().nth(policy.second - 1) == Some(policy.letter)) as usize;
-    count == 1
+    (password.chars().nth(policy.first - 1) == Some(policy.letter))
+        ^ (password.chars().nth(policy.second - 1) == Some(policy.letter))
 }
