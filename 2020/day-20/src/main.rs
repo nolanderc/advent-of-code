@@ -33,71 +33,260 @@ fn main() {
             pixels[i] = pixel_row;
         }
 
-        images.push(Image { id, pixels })
+        images.push(Image { id, pixels });
     }
 
-    println!("{}", part1(&images));
+    let joined = join_images(&images);
+
+    println!("{}", part1(&joined));
+    println!("{}", part2(&joined));
 }
 
-fn part1(images: &[Image]) -> u64 {
-    let mut borders = HashMap::new();
+fn part1(joined: &Vec<Vec<Image>>) -> u64 {
+    let l = joined.len() - 1;
 
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-    struct Border {
-        image: u32,
-        side: Side,
-        reversed: bool,
-    }
+    let a = joined[0][0].id as u64;
+    let b = joined[0][l].id as u64;
+    let c = joined[l][0].id as u64;
+    let d = joined[l][l].id as u64;
 
-    const SIDES: [Side; 4] = [Side::North, Side::South, Side::West, Side::East];
+    a * b * c * d
+}
 
-    for image in images {
-        for &side in SIDES.iter() {
-            let border = image.border(side);
-            for reversed in (0..=1).map(|r| r != 0) {
-                let border = if reversed {
-                    reversed_bits(border)
-                } else {
-                    border
-                };
+fn part2(joined: &Vec<Vec<Image>>) -> u64 {
+    let size = joined.len() * 8;
+    let mut full = vec![vec![false; size]; size];
 
-                borders.entry(border).or_insert_with(Vec::new).push(Border {
-                    image: image.id,
-                    side,
-                    reversed,
-                });
+    for iy in 0..joined.len() {
+        for ix in 0..joined.len() {
+            for y in 0..8 {
+                for x in 0..8 {
+                    full[iy * 8 + y][ix * 8 + x] = joined[iy][ix].get(1 + y, 1 + x);
+                }
             }
         }
     }
 
-    // In the input: for a given side, at most one other image can be placed adjacent to it.
+    let monster = [
+        b"                  # ",
+        b"#    ##    ##    ###",
+        b" #  #  #  #  #  #   ",
+    ];
+
+    let mut pattern = Vec::new();
+    for y in 0..monster.len() {
+        for x in 0..monster[0].len() {
+            if monster[y][x] == b'#' {
+                pattern.push((x, y));
+            }
+        }
+    }
+
+    let mut images = vec![full.clone(), fliph(full.clone()), flipv(full.clone())];
+
+    for _ in 0..3 {
+        for i in images.len() - 3..images.len() {
+            images.push(rotate(&images[i]));
+        }
+    }
+
+    for image in images {
+        let matches = pattern_match(&image, &pattern);
+        if matches.len() > 0 {
+            let mut points = HashSet::new();
+            for (x, y) in matches {
+                for &(dx, dy) in pattern.iter() {
+                    points.insert((x + dx, y + dy));
+                }
+            }
+
+            let active = image
+                .into_iter()
+                .map(|row| row.into_iter().filter(|pixel| *pixel).count())
+                .sum::<usize>();
+            return active as u64 - points.len() as u64;
+        }
+    }
+
+    panic!()
+}
+
+fn pattern_match(image: &Vec<Vec<bool>>, pattern: &Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+    let width = pattern.iter().map(|p| p.0).max().unwrap();
+    let height = pattern.iter().map(|p| p.1).max().unwrap();
+
+    let mut matches = Vec::new();
+
+    for y in 0..image.len().saturating_sub(height) {
+        'offset: for x in 0..image[0].len().saturating_sub(width) {
+            for &(dx, dy) in pattern.iter() {
+                if !image[y + dy][x + dx] {
+                    continue 'offset;
+                }
+            }
+
+            matches.push((x, y));
+        }
+    }
+
+    matches
+}
+
+fn rotate(image: &Vec<Vec<bool>>) -> Vec<Vec<bool>> {
+    let size = image.len();
+    let mut new = vec![vec![false; size]; size];
+
+    for y in 0..size {
+        for x in 0..size {
+            new[y][x] = image[size - 1 - x][y];
+        }
+    }
+
+    new
+}
+
+fn flipv(mut image: Vec<Vec<bool>>) -> Vec<Vec<bool>> {
+    let size = image.len();
+    for i in 0..size / 2 {
+        image.swap(i, size - 1 - i);
+    }
+    image
+}
+
+fn fliph(mut image: Vec<Vec<bool>>) -> Vec<Vec<bool>> {
+    let size = image.len();
+    for row in image.iter_mut() {
+        for i in 0..size / 2 {
+            row.swap(i, size - 1 - i);
+        }
+    }
+    image
+}
+
+fn join_images(images: &[Image]) -> Vec<Vec<Image>> {
+    let mut borders = HashMap::new();
+
+    let mut add_border = |border, image, side, reversed| {
+        borders
+            .entry(border)
+            .or_insert_with(Vec::new)
+            .push((image, side, reversed));
+    };
+
+    for &image in images.iter() {
+        for &side in SIDES.iter() {
+            let border = image.border(side);
+            let reversed = reversed_bits(border);
+
+            add_border(border, image, side, false);
+            add_border(reversed, image, side, true);
+        }
+    }
+
+    // In the input: no border matches between more than 2 images
     for ids in borders.values() {
         assert!(matches!(ids.len(), 1 | 2));
     }
 
-    // For each image, the images that can be adjacent to its edges
-    let mut adjacent = HashMap::new();
-    for ids in borders.values() {
-        for this in ids.iter() {
-            for other in ids.iter().filter(|b| b.image != this.image) {
-                adjacent.entry(this.image).or_insert_with(Vec::new).push(other);
+    borders.retain(|_, ids| ids.len() == 2);
+    borders.shrink_to_fit();
+
+    // pick an arbitrary image and place it into the grid.
+    let side = isqrt(images.len()) as i32;
+    let mut grid = HashMap::new();
+
+    let first = *images.first().unwrap();
+    grid.insert((side, side), first);
+
+    complete_grid(&mut grid, &borders, (side, side));
+
+    let (mut x_min, mut x_max) = (side, side);
+    let (mut y_min, mut y_max) = (side, side);
+    for &(x, y) in grid.keys() {
+        x_min = x.min(x_min);
+        x_max = x.max(x_max);
+        y_min = y.min(y_min);
+        y_max = y.max(y_max);
+    }
+
+    // we assume this from the input data
+    assert_eq!(1 + x_max - x_min, side);
+    assert_eq!(1 + y_max - y_min, side);
+
+    let mut joined = Vec::with_capacity(side as usize);
+    for y in y_min..=y_max {
+        let mut row = Vec::with_capacity(side as usize);
+        for x in x_min..=x_max {
+            row.push(grid[&(x, y)]);
+        }
+        joined.push(row);
+    }
+
+    joined
+}
+
+fn complete_grid(
+    grid: &mut HashMap<(i32, i32), Image>,
+    borders: &HashMap<u16, Vec<(Image, Side, bool)>>,
+    current: (i32, i32),
+) {
+    let image = grid[&current];
+    for &direction in SIDES.iter() {
+        let (dx, dy) = direction.delta();
+        let new_pos = (current.0 + dx, current.1 + dy);
+
+        if grid.contains_key(&new_pos) {
+            continue;
+        }
+
+        let border = image.border(direction);
+        match borders.get(&border) {
+            None => {}
+            Some(candidates) => {
+                for &(mut cand, mut side, reversed) in candidates.iter() {
+                    if image.id == cand.id {
+                        continue;
+                    }
+
+                    // +-a-+
+                    // b   d
+                    // +-c-+
+
+                    while side != direction.opposite() {
+                        side = side.rotated();
+                        cand = cand.rotated();
+                    }
+
+                    if !reversed {
+                        cand = match side {
+                            Side::North | Side::South => cand.flipped_horiz(),
+                            Side::West | Side::East => cand.flipped_vert(),
+                        }
+                    }
+
+                    if is_valid(grid, new_pos, cand) {
+                        grid.insert(new_pos, cand);
+                        complete_grid(grid, borders, new_pos);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn is_valid(grid: &HashMap<(i32, i32), Image>, pos: (i32, i32), image: Image) -> bool {
+    for &side in SIDES.iter() {
+        let (dx, dy) = side.delta();
+        let new_pos = (pos.0 + dx, pos.1 + dy);
+
+        if let Some(adjacent) = grid.get(&new_pos) {
+            if reversed_bits(image.border(side)) != adjacent.border(side.opposite()) {
+                return false;
             }
         }
     }
 
-    let mut corners = Vec::with_capacity(4);
-    for (this, others) in adjacent.iter() {
-        if others.len() == 4 {
-            corners.push(*this);
-            dbg!((this, others));
-        }
-    }
-
-    if corners.len() == 4 {
-        corners.iter().map(|c| *c as u64).product()
-    } else {
-        panic!("could not cheat our way to four corners")
-    }
+    true
 }
 
 fn isqrt(x: usize) -> usize {
@@ -114,7 +303,7 @@ fn reversed_bits(mut x: u16) -> u16 {
     res
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 struct Image {
     pixels: [u16; 10],
     id: u32,
@@ -128,12 +317,43 @@ enum Side {
     East,
 }
 
+const SIDES: [Side; 4] = [Side::North, Side::South, Side::West, Side::East];
+
+impl Side {
+    fn rotated(self) -> Self {
+        match self {
+            Side::North => Side::West,
+            Side::South => Side::East,
+            Side::West => Side::South,
+            Side::East => Side::North,
+        }
+    }
+
+    fn delta(self) -> (i32, i32) {
+        match self {
+            Side::North => (0, -1),
+            Side::South => (0, 1),
+            Side::West => (-1, 0),
+            Side::East => (1, 0),
+        }
+    }
+
+    fn opposite(self) -> Side {
+        match self {
+            Side::North => Side::South,
+            Side::South => Side::North,
+            Side::West => Side::East,
+            Side::East => Side::West,
+        }
+    }
+}
+
 impl Image {
     fn border(&self, side: Side) -> u16 {
         match side {
             Side::North => self.pixels[0],
-            Side::South => self.pixels[9],
-            Side::West => self.column(0),
+            Side::South => reversed_bits(self.pixels[9]),
+            Side::West => reversed_bits(self.column(0)),
             Side::East => self.column(9),
         }
     }
@@ -152,11 +372,22 @@ impl Image {
         new
     }
 
-    fn flipped(mut self) -> Self {
+    fn flipped_vert(mut self) -> Self {
         for i in 0..5 {
             self.pixels.swap(i, 9 - i);
         }
         self
+    }
+
+    fn flipped_horiz(mut self) -> Self {
+        for row in self.pixels.iter_mut() {
+            *row = reversed_bits(*row);
+        }
+        self
+    }
+
+    fn get(&self, row: usize, col: usize) -> bool {
+        self.pixels[row] >> (9 - col) & 1 != 0
     }
 }
 
