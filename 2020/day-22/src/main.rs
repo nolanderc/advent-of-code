@@ -1,4 +1,4 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Read;
 
 fn main() {
@@ -65,6 +65,7 @@ fn part2(mut players: [VecDeque<Card>; 2]) -> u64 {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 #[repr(u8)]
 enum Winner {
     Zero,
@@ -76,14 +77,14 @@ fn recursive_combat(players: &mut [VecDeque<Card>; 2]) -> Winner {
 
     loop {
         if players[0].is_empty() {
-            return Winner::One
+            break Winner::One;
         }
         if players[1].is_empty() {
-            return Winner::Zero
+            break Winner::Zero;
         }
 
         if !previous_rounds.insert(players.clone()) {
-            return Winner::Zero;
+            break Winner::Zero;
         }
 
         let zero = players[0].pop_front().unwrap() as usize;
