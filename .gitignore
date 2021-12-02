@@ -1,2 +1,5 @@
 **/input*
 **/target/
+**/zig-out/
+**/zig-cache/
+**/cached-inputs/

@@ -1,33 +1,28 @@
 const std = @import("std");
 const utils = @import("utils.zig");
 
+const alloc = utils.global_allocator;
+
 pub fn main() anyerror!void {
-    std.log.info("https://adventofcode.com/2021/day/1", .{});
-    defer _ = utils.gpa.detectLeaks();
-    var alloc = utils.global_alloc;
-
-    var input_reader = try utils.InputReader.initFromStdIn(alloc);
-    defer input_reader.deinit(alloc);
-
-    const input = try input_reader.parseLines(DepthInput).collectToSlice(alloc);
-    defer alloc.free(input);
-
-    std.log.info("part 1: {}", .{part1(input)});
-    std.log.info("part 2: {}", .{part2(input)});
-    std.log.info("done", .{});
+    try utils.run(.{
+        .problem = .{
+            .year = 2021,
+            .day = 1,
+        },
+        .input = u32,
+        .format = .{ .pattern = "{}" },
+    }, &.{ part1, part2 });
 }
 
-const DepthInput = struct { depth: u32 };
-
-fn part1(input: []const DepthInput) u32 {
-    return countIncreasingWindows(input, 1);
+fn part1(input: []const u32) !void {
+    std.log.info("part1: {}", .{countIncreasingWindows(input, 1)});
 }
 
-fn part2(input: []const DepthInput) u32 {
-    return countIncreasingWindows(input, 3);
+fn part2(input: []const u32) !void {
+    std.log.info("part2: {}", .{countIncreasingWindows(input, 3)});
 }
 
-fn countIncreasingWindows(input: []const DepthInput, window_size: u32) u32 {
+fn countIncreasingWindows(input: []const u32, window_size: u32) u32 {
     var increases: u32 = 0;
     var i: u32 = window_size;
 
@@ -36,11 +31,11 @@ fn countIncreasingWindows(input: []const DepthInput, window_size: u32) u32 {
         var head: u32 = i - window_size;
 
         while (head <= i) : (head += 1) {
-            sum += input[head].depth;
+            sum += input[head];
         }
 
-        const prev_sum = sum - input[i].depth;
-        const curr_sum = sum - input[i - window_size].depth;
+        const prev_sum = sum - input[i];
+        const curr_sum = sum - input[i - window_size];
         if (curr_sum > prev_sum) increases += 1;
     }
 
