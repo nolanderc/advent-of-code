@@ -35,7 +35,7 @@ fn ParserFunction(comptime T: type) (fn ([]const u8) anyerror!ParserOutput(T)) {
     }.parse;
 }
 
-pub fn parseSingle(comptime T: type, text: []const u8) !ParseResult(T) {
+pub fn parseSingle(comptime T: type, comptime specifier: []const u8, text: []const u8) !ParseResult(T) {
     const trait = std.meta.trait;
 
     if (comptime T == []const u8) {
@@ -46,14 +46,7 @@ pub fn parseSingle(comptime T: type, text: []const u8) !ParseResult(T) {
     }
 
     if (comptime trait.isIntegral(T)) {
-        var length: usize = 0;
-        if (std.mem.startsWith(u8, text, "-") or std.mem.startsWith(u8, text, "+")) length += 1;
-        while (length < text.len and std.ascii.isDigit(text[length])) : (length += 1) {}
-
-        return ParseResult(T){
-            .value = try std.fmt.parseInt(T, text[0..length], 10),
-            .length = length,
-        };
+        return parseInt(T, specifier, text);
     }
 
     if (comptime trait.isFloat(T)) {
@@ -81,13 +74,11 @@ pub fn parseSingle(comptime T: type, text: []const u8) !ParseResult(T) {
             inline for (fields) |field, index| {
                 fields_ordered[index] = field;
             }
-            const S = struct {
-                pub fn order(context: void, comptime lhs: EnumField, comptime rhs: EnumField) bool {
-                    _ = context;
+            std.sort.sort(EnumField, &fields_ordered, {}, struct {
+                pub fn order(_: void, comptime lhs: EnumField, comptime rhs: EnumField) bool {
                     return lhs.name.len > rhs.name.len or (lhs.name.len == rhs.name.len and std.mem.lessThan(u8, lhs.name, rhs.name));
                 }
-            };
-            std.sort.sort(EnumField, &fields_ordered, {}, S.order);
+            }.order);
         }
 
         inline for (fields_ordered) |field| {
@@ -107,6 +98,35 @@ pub fn parseSingle(comptime T: type, text: []const u8) !ParseResult(T) {
     }
 }
 
+fn parseInt(comptime T: type, comptime specifier: []const u8, text: []const u8) !ParseResult(T) {
+    comptime var radix: u32 = 10;
+    comptime {
+        const specifiers = .{
+            .{ .specifier = "", .radix = 10 },
+            .{ .specifier = "b", .radix = 2 },
+            .{ .specifier = "x", .radix = 10 },
+        };
+
+        inline for (specifiers) |spec| {
+            if (std.mem.eql(u8, specifier, spec.specifier)) {
+                radix = spec.radix;
+                break;
+            }
+        } else {
+            @compileError(std.fmt.comptimePrint("unknown specifier for integers: `{s}`", .{specifier}));
+        }
+    }
+
+    var length: usize = 0;
+    if (std.mem.startsWith(u8, text, "-") or std.mem.startsWith(u8, text, "+")) length += 1;
+    while (length < text.len and std.ascii.isDigit(text[length])) : (length += 1) {}
+
+    return ParseResult(T){
+        .value = try std.fmt.parseInt(T, text[0..length], radix),
+        .length = length,
+    };
+}
+
 pub fn PatternParser(comptime pattern: []const u8, Output: type) type {
     const info = @typeInfo(Output);
     if (info != .Struct) @compileError("expected a struct");
@@ -114,9 +134,9 @@ pub fn PatternParser(comptime pattern: []const u8, Output: type) type {
     _ = pattern;
 
     const fields = info.Struct.fields;
-    const field_count = fields.len;
 
-    comptime var fragments = [1][]const u8{""} ** (field_count + 1);
+    comptime var fragments = [1][]const u8{""} ** (fields.len + 1);
+    comptime var specifiers = [1][]const u8{""} ** fields.len;
     comptime {
         var fragment_buffer: [pattern.len]u8 = undefined;
 
@@ -132,18 +152,22 @@ pub fn PatternParser(comptime pattern: []const u8, Output: type) type {
                 if (pattern[i + 1] == '{') {
                     i += 1;
                 } else {
-                    if (pattern[i + 1] != '}') @compileError("expected `}`");
-
-                    if (frag_count >= fragments.len) {
-                        @compileError(std.fmt.comptimePrint("found pattern with more placeholders (`{{}}`) than the provided struct had fields ({})", .{field_count}));
+                    if (frag_count >= fields.len) {
+                        @compileError(std.fmt.comptimePrint("found pattern with more placeholders (>= {}) than the provided struct had fields ({})", .{ frag_count, fields.len }));
                     }
 
-                    fragments[frag_count] = fragment_buffer[last_field..buffer_index];
-                    frag_count += 1;
-                    last_field = buffer_index;
                     i += 1;
+                    if (std.mem.indexOf(u8, pattern[i..], "}")) |index| {
+                        fragments[frag_count] = fragment_buffer[last_field..buffer_index];
+                        specifiers[frag_count] = pattern[i .. i + index];
 
-                    continue;
+                        frag_count += 1;
+                        last_field = buffer_index;
+                        i += index;
+                        continue;
+                    } else {
+                        @compileError(std.fmt.comptimePrint("expected closing `}}`, found `{s}`", .{pattern[i..]}));
+                    }
                 }
             }
 
@@ -155,7 +179,7 @@ pub fn PatternParser(comptime pattern: []const u8, Output: type) type {
         if (last_field == buffer_index) frag_count += 1;
 
         if (frag_count != fragments.len)
-            @compileError("number of type specifiers (`{}`) does not match number of fields");
+            @compileError(std.fmt.comptimePrint("number of type specifiers ({}) does not match number of fields ({})", .{ frag_count - 1, fields.len }));
     }
 
     return struct {
@@ -183,15 +207,16 @@ pub fn PatternParser(comptime pattern: []const u8, Output: type) type {
 
             inline for (fields) |field, index| {
                 const fragment = fragments[index + 1];
+                const specifier = specifiers[index];
 
                 const value = if (fragment.len == 0) blk: {
-                    const result = try parseSingle(field.field_type, remainder);
+                    const result = try parseSingle(field.field_type, specifier, remainder);
                     remainder = remainder[result.length..];
                     break :blk result.value;
                 } else blk: {
                     const end = std.mem.indexOf(u8, remainder, fragment) orelse return error.PatternMismatch;
 
-                    const result = try parseSingle(field.field_type, remainder[0..end]);
+                    const result = try parseSingle(field.field_type, specifier, remainder[0..end]);
                     if (result.length != end) return error.PatternMismatch;
 
                     remainder = remainder[end + fragment.len ..];

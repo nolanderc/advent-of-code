@@ -10,55 +10,16 @@ pub const Config = struct {
     input: type,
     format: InputFormat,
 
-    fn inputType(comptime self: @This()) type {
-        return switch (self.format) {
-            .pattern => []const self.input,
-        };
+    pub fn run(comptime config: Config, comptime solution: anytype) solutionOutput(solution) {
+        std.log.info("{s}", .{config.problem.url()});
+        const input = try getInput(global_allocator, config.problem);
+        defer global_allocator.free(input);
+        return runWithRawInput(config, solution, input);
     }
 
-    fn solutionFn(comptime self: @This()) type {
-        return fn (self.inputType()) anyerror!void;
-    }
-
-    fn parseInput(comptime self: @This(), alloc: *Allocator, raw: []const u8) !self.inputType() {
-        switch (self.format) {
-            .pattern => {
-                const trimmed = std.mem.trimRight(u8, raw, &std.ascii.spaces);
-
-                if (trimmed.len == 0) return error.EmptyInput;
-
-                const elements = std.mem.count(u8, trimmed, "\n") + 1;
-
-                var items = try alloc.alloc(self.input, elements);
-                var count: usize = 0;
-
-                var lines = std.mem.split(u8, trimmed, "\n");
-                while (lines.next()) |line| {
-                    items[count] = self.parseLine(line) catch |err| {
-                        std.log.err("failed to parse line: `{s}`", .{line});
-                        return err;
-                    };
-                    count += 1;
-                }
-
-                return items;
-            },
-        }
-    }
-
-    fn parseLine(comptime self: @This(), line: []const u8) !self.input {
-        switch (self.format) {
-            .pattern => |pattern| {
-                const PatternStruct = switch (@typeInfo(self.input)) {
-                    .Struct => self.input,
-                    else => struct { value: self.input },
-                };
-
-                const output = try parse.parsePattern(pattern, PatternStruct, line);
-
-                return if (PatternStruct == self.input) output else output.value;
-            },
-        }
+    pub fn runWithRawInput(comptime config: Config, comptime solution: anytype, raw_input: []const u8) solutionOutput(solution) {
+        const input = try config.format.parseInput(config.input, global_allocator, raw_input);
+        return solution(input);
     }
 };
 
@@ -85,25 +46,62 @@ const Problem = struct {
 
 pub const InputFormat = union(enum) {
     pattern: []const u8,
-};
 
-pub fn run(comptime config: Config, solutions: []const config.solutionFn()) anyerror!void {
-    std.log.info("{s}", .{config.problem.url()});
-    const input = try getInput(global_allocator, config.problem);
-    defer global_allocator.free(input);
-    return runWithRawInput(config, solutions, input);
-}
-
-pub fn runWithRawInput(comptime config: Config, solutions: []const config.solutionFn(), raw_input: []const u8) !void {
-    const input = try config.parseInput(global_allocator, raw_input);
-    defer global_allocator.free(input);
-
-    for (solutions) |solution| {
-        try solution(input);
+    fn Output(comptime self: @This(), comptime T: type) type {
+        switch (self) {
+            .pattern => return []const T,
+        }
     }
 
-    _ = solutions;
-    _ = input;
+    fn parseInput(comptime self: @This(), comptime T: type, alloc: *Allocator, raw: []const u8) !self.Output(T) {
+        switch (self) {
+            .pattern => {
+                const trimmed = std.mem.trimRight(u8, raw, &std.ascii.spaces);
+                if (trimmed.len == 0) return error.EmptyInput;
+
+                const elements = std.mem.count(u8, trimmed, "\n") + 1;
+                var items = try alloc.alloc(T, elements);
+                var count: usize = 0;
+
+                var lines = std.mem.split(u8, trimmed, "\n");
+                while (lines.next()) |line| {
+                    items[count] = self.parsePattern(T, line) catch |err| {
+                        std.log.err("failed to parse line: `{s}`", .{line});
+                        return err;
+                    };
+                    count += 1;
+                }
+
+                return items;
+            },
+        }
+    }
+
+    fn parsePattern(comptime self: @This(), comptime T: type, line: []const u8) !T {
+        const pattern = self.pattern;
+        const PatternStruct = switch (@typeInfo(T)) {
+            .Struct => T,
+            else => struct { value: T },
+        };
+        const output = try parse.parsePattern(pattern, PatternStruct, line);
+        return if (PatternStruct == T) output else output.value;
+    }
+};
+
+const SolutionInfo = struct {
+    input: type,
+    output: type,
+};
+
+fn solutionOutput(comptime solution: anytype) type {
+    const solution_type = @TypeOf(solution);
+    const solution_info = @typeInfo(solution_type);
+    const solution_fn = if (comptime solution_info == .Fn) solution_info.Fn else @compileError(std.fmt.comptimePrint("expected a function, found {}", .{solution_type}));
+
+    switch (@typeInfo(solution_fn.return_type.?)) {
+        .ErrorUnion => |err| return anyerror!err.payload,
+        else => return anyerror!(solution_fn.return_type.?),
+    }
 }
 
 fn getInput(alloc: *Allocator, comptime problem: Problem) ![]u8 {

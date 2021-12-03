@@ -3,23 +3,28 @@ const utils = @import("utils.zig");
 
 const alloc = utils.global_allocator;
 
-pub fn main() anyerror!void {
-    try utils.run(.{
-        .problem = .{
-            .year = 2021,
-            .day = 2,
-        },
-        .input = Command,
-        .format = .{ .pattern = "{} {}" },
-    }, &.{ part1, part2 });
-}
-
-const Command = struct {
-    direction: enum { forward, down, up },
-    steps: u32,
+const config = utils.Config{
+    .problem = .{
+        .year = 2021,
+        .day = 2,
+    },
+    .input = struct {
+        direction: enum { forward, down, up },
+        steps: u32,
+    },
+    .format = .{ .pattern = "{} {}" },
 };
 
-fn part1(commands: []const Command) !void {
+pub fn main() anyerror!void {
+    try config.run(solution);
+}
+
+fn solution(input: []const config.input) void {
+    std.log.info("part 1: {}", .{part1(input)});
+    std.log.info("part 2: {}", .{part2(input)});
+}
+
+fn part1(commands: []const config.input) u32 {
     var x: u32 = 0;
     var depth: u32 = 0;
     for (commands) |command| {
@@ -29,10 +34,10 @@ fn part1(commands: []const Command) !void {
             .up => depth -= command.steps,
         }
     }
-    std.log.info("part 1: {}", .{x * depth});
+    return x * depth;
 }
 
-fn part2(commands: []const Command) !void {
+fn part2(commands: []const config.input) u32 {
     var x: u32 = 0;
     var depth: u32 = 0;
     var aim: u32 = 0;
@@ -46,5 +51,5 @@ fn part2(commands: []const Command) !void {
             .up => aim -= command.steps,
         }
     }
-    std.log.info("part 2: {}", .{x * depth});
+    return x * depth;
 }
