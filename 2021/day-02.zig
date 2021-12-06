@@ -16,12 +16,8 @@ const config = utils.Config{
 };
 
 pub fn main() anyerror!void {
-    try config.run(solution);
-}
-
-fn solution(input: []const config.input) void {
-    std.log.info("part 1: {}", .{part1(input)});
-    std.log.info("part 2: {}", .{part2(input)});
+    std.log.info("part 1: {}", .{config.run(part1)});
+    std.log.info("part 2: {}", .{config.run(part2)});
 }
 
 fn part1(commands: []const config.input) u32 {
@@ -52,4 +48,21 @@ fn part2(commands: []const config.input) u32 {
         }
     }
     return x * depth;
+}
+
+const sample =
+    \\forward 5
+    \\down 5
+    \\forward 8
+    \\up 3
+    \\down 8
+    \\forward 2
+;
+
+test "part 1 sample" {
+    try std.testing.expectEqual(try config.runWithRawInput(part1, sample), 150);
+}
+
+test "part 2 sample" {
+    try std.testing.expectEqual(try config.runWithRawInput(part2, sample), 900);
 }

@@ -4,35 +4,13 @@ pub fn ParseResult(comptime T: type) type {
     return struct { value: T, length: usize };
 }
 
-pub fn parse(comptime T: type, text: []const u8) !ParserOutput(T) {
-    return ParserFunction(T)(text);
-}
-
-pub fn parsePattern(comptime pattern: []const u8, comptime Output: type, text: []const u8) !Output {
-    return PatternParser(pattern, Output).parse(text);
+pub fn parsePattern(comptime Output: type, comptime pattern: []const u8, text: []const u8) !Output {
+    return PatternParser(Output, pattern).parse(text);
 }
 
 pub fn ParserOutput(comptime T: type) type {
     if (@typeInfo(T) == .Struct and @hasDecl(T, "ParseOutput")) return T.ParseOutput;
     return T;
-}
-
-fn ParserFunction(comptime T: type) (fn ([]const u8) anyerror!ParserOutput(T)) {
-    if (@typeInfo(T) == .Struct and @hasDecl(T, "parse")) return T.parse;
-
-    return struct {
-        fn parse(text: []const u8) !T {
-            const result = try parseSingle(T, text);
-
-            const remaining = text[result.length..];
-            if (std.mem.trimLeft(u8, remaining, &std.ascii.spaces).len > 0) {
-                std.log.err("trailing characters: `{s}`", .{remaining});
-                return error.TrailingCharacters;
-            }
-
-            return result.value;
-        }
-    }.parse;
 }
 
 pub fn parseSingle(comptime T: type, comptime specifier: []const u8, text: []const u8) !ParseResult(T) {
@@ -44,55 +22,18 @@ pub fn parseSingle(comptime T: type, comptime specifier: []const u8, text: []con
             .length = text.len,
         };
     }
-
     if (comptime trait.isIntegral(T)) {
         return parseInt(T, specifier, text);
     }
-
     if (comptime trait.isFloat(T)) {
-        var length = 0;
-        if (std.mem.startsWith(u8, text, "-") or std.mem.startsWith(u8, text, "+")) length += 1;
-        while (length < text.len and std.ascii.isDigit(text[length])) : (length += 1) {}
-        if (length + 1 < text.len and text[length] == '.') {
-            length += 1;
-            while (length < text.len and std.ascii.isDigit(text[length])) : (length += 1) {}
-        }
-
-        return ParseResult(T){
-            .value = try std.fmt.parseFloat(T, text[0..length]),
-            .length = length,
-        };
+        return parseFloat(T, specifier, text);
     }
-
+    if (@hasDecl(T, "parse")) {
+        return parseCustom(T, specifier, text);
+    }
     if (@typeInfo(T) == .Enum) {
-        const fields = @typeInfo(T).Enum.fields;
-
-        const EnumField = std.builtin.TypeInfo.EnumField;
-
-        comptime var fields_ordered: [fields.len]EnumField = undefined;
-        comptime {
-            inline for (fields) |field, index| {
-                fields_ordered[index] = field;
-            }
-            std.sort.sort(EnumField, &fields_ordered, {}, struct {
-                pub fn order(_: void, comptime lhs: EnumField, comptime rhs: EnumField) bool {
-                    return lhs.name.len > rhs.name.len or (lhs.name.len == rhs.name.len and std.mem.lessThan(u8, lhs.name, rhs.name));
-                }
-            }.order);
-        }
-
-        inline for (fields_ordered) |field| {
-            if (std.ascii.startsWithIgnoreCase(text, field.name)) {
-                return ParseResult(T){
-                    .value = @intToEnum(T, field.value),
-                    .length = field.name.len,
-                };
-            }
-        }
-
-        return error.InvalidEnum;
+        return parseEnum(T, specifier, text);
     }
-
     comptime {
         @compileError(std.fmt.comptimePrint("unsupported type for parsing: {}", .{T}));
     }
@@ -104,7 +45,7 @@ fn parseInt(comptime T: type, comptime specifier: []const u8, text: []const u8) 
         const specifiers = .{
             .{ .specifier = "", .radix = 10 },
             .{ .specifier = "b", .radix = 2 },
-            .{ .specifier = "x", .radix = 10 },
+            .{ .specifier = "x", .radix = 16 },
         };
 
         inline for (specifiers) |spec| {
@@ -127,13 +68,77 @@ fn parseInt(comptime T: type, comptime specifier: []const u8, text: []const u8) 
     };
 }
 
-pub fn PatternParser(comptime pattern: []const u8, Output: type) type {
-    const info = @typeInfo(Output);
-    if (info != .Struct) @compileError("expected a struct");
+fn parseFloat(comptime T: type, comptime specifier: []const u8, text: []const u8) !ParseResult(T) {
+    if (specifier.len != 0) {
+        @compileError(std.fmt.comptimePrint("unknown specifier for enums: `{s}`", .{specifier}));
+    }
 
-    _ = pattern;
+    var length = 0;
+    if (std.mem.startsWith(u8, text, "-") or std.mem.startsWith(u8, text, "+")) length += 1;
+    while (length < text.len and std.ascii.isDigit(text[length])) : (length += 1) {}
+    if (length + 1 < text.len and text[length] == '.') {
+        length += 1;
+        while (length < text.len and std.ascii.isDigit(text[length])) : (length += 1) {}
+    }
 
-    const fields = info.Struct.fields;
+    return ParseResult(T){
+        .value = try std.fmt.parseFloat(T, text[0..length]),
+        .length = length,
+    };
+}
+
+fn parseEnum(comptime T: type, comptime specifier: []const u8, text: []const u8) !ParseResult(T) {
+    if (specifier.len != 0) {
+        @compileError(std.fmt.comptimePrint("unknown specifier for enums: `{s}`", .{specifier}));
+    }
+
+    const fields = @typeInfo(T).Enum.fields;
+
+    const EnumField = std.builtin.TypeInfo.EnumField;
+
+    comptime var fields_ordered: [fields.len]EnumField = undefined;
+    comptime {
+        inline for (fields) |field, index| {
+            fields_ordered[index] = field;
+        }
+        std.sort.sort(EnumField, &fields_ordered, {}, struct {
+            pub fn order(_: void, comptime lhs: EnumField, comptime rhs: EnumField) bool {
+                return lhs.name.len > rhs.name.len or (lhs.name.len == rhs.name.len and std.mem.lessThan(u8, lhs.name, rhs.name));
+            }
+        }.order);
+    }
+
+    inline for (fields_ordered) |field| {
+        if (std.ascii.startsWithIgnoreCase(text, field.name)) {
+            return ParseResult(T){
+                .value = @intToEnum(T, field.value),
+                .length = field.name.len,
+            };
+        }
+    }
+
+    return error.InvalidEnum;
+}
+
+fn parseCustom(comptime T: type, comptime specifier: []const u8, text: []const u8) !ParseResult(T) {
+    if (@hasDecl(T, "parse")) {
+        const value = try T.parse(specifier, text);
+        if (@TypeOf(value) == ParseResult(T)) {
+            return value;
+        } else {
+            return ParseResult(T){
+                .value = value,
+                .length = text.len,
+            };
+        }
+    } else {
+        @compileError(std.fmt.comptimePrint("struct `{}` does not have a `parse` function"));
+    }
+}
+
+pub fn PatternParser(comptime Output: type, comptime pattern: []const u8) type {
+    const Fields = if (@typeInfo(Output) == .Struct) Output else struct { inner: Output };
+    const fields = @typeInfo(Fields).Struct.fields;
 
     comptime var fragments = [1][]const u8{""} ** (fields.len + 1);
     comptime var specifiers = [1][]const u8{""} ** fields.len;
@@ -175,8 +180,9 @@ pub fn PatternParser(comptime pattern: []const u8, Output: type) type {
             buffer_index += 1;
         }
 
-        // Add a trailing empty string if the pattern ended with a type specifier
-        if (last_field == buffer_index) frag_count += 1;
+        // Add a trailing fragment
+        fragments[frag_count] = fragment_buffer[last_field..buffer_index];
+        frag_count += 1;
 
         if (frag_count != fragments.len)
             @compileError(std.fmt.comptimePrint("number of type specifiers ({}) does not match number of fields ({})", .{ frag_count - 1, fields.len }));
@@ -194,8 +200,8 @@ pub fn PatternParser(comptime pattern: []const u8, Output: type) type {
             std.debug.print("\n", .{});
         }
 
-        pub fn parse(text: []const u8) anyerror!Output {
-            var output: ParseOutput = undefined;
+        pub fn parse(text: []const u8) anyerror!ParseOutput {
+            var output: Fields = undefined;
 
             var remainder = text;
 
@@ -226,7 +232,11 @@ pub fn PatternParser(comptime pattern: []const u8, Output: type) type {
                 @field(output, field.name) = value;
             }
 
-            return output;
+            if (Fields == ParseOutput) {
+                return output;
+            } else {
+                return output.inner;
+            }
         }
     };
 }

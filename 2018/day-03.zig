@@ -3,17 +3,18 @@ const utils = @import("utils.zig");
 
 const alloc = utils.global_allocator;
 
+const config = utils.Config{
+    .problem = .{
+        .year = 2018,
+        .day = 3,
+    },
+    .input = Claim,
+    .format = .{ .pattern = "#{} @ {},{}: {}x{}" },
+};
+
 pub fn main() !void {
-    defer _ = utils.gpa.detectLeaks();
-    std.log.info("https://adventofcode.com/2018/day/3", .{});
-
-    var input = try utils.InputReader.initFromStdIn(alloc);
-    defer input.deinit(alloc);
-    var claims = try input.parseLines("#{} @ {},{}: {}x{}", Claim).collectToSlice(alloc);
-    defer alloc.free(claims);
-
-    std.log.info("part 1: {}", .{try part1(claims)});
-    std.log.info("part 2: {}", .{try part2(claims)});
+    std.log.info("part 1: {}", .{config.run(part1)});
+    std.log.info("part 2: {}", .{config.run(part2)});
 }
 
 const Claim = struct {
@@ -24,7 +25,7 @@ const Claim = struct {
     h: u32,
 };
 
-fn part1(claims: []const Claim) !u32 {
+fn part1(claims: []const config.input) !u32 {
     var grid = try Grid.init(claims);
     defer grid.deinit();
 
@@ -36,7 +37,7 @@ fn part1(claims: []const Claim) !u32 {
     return count;
 }
 
-fn part2(claims: []const Claim) !?u32 {
+fn part2(claims: []const config.input) !?u32 {
     var grid = try Grid.init(claims);
     defer grid.deinit();
 
@@ -93,3 +94,17 @@ const Grid = struct {
         return grid;
     }
 };
+
+const sample =
+    \\#1 @ 1,3: 4x4
+    \\#2 @ 3,1: 4x4
+    \\#3 @ 5,5: 2x2
+;
+
+test "part 1 sample" {
+    try std.testing.expectEqual(try config.runWithRawInput(part1, sample), 4);
+}
+
+test "part 2 sample" {
+    try std.testing.expectEqual(try config.runWithRawInput(part2, sample), 3);
+}

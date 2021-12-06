@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const parse = @import("parse.zig");
+pub const parse = @import("parse.zig");
 
 pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 pub const global_allocator = &gpa.allocator;
@@ -10,14 +10,14 @@ pub const Config = struct {
     input: type,
     format: InputFormat,
 
-    pub fn run(comptime config: Config, comptime solution: anytype) solutionOutput(solution) {
+    pub fn run(comptime config: Config, comptime solution: anytype) SolutionOutput(solution) {
         std.log.info("{s}", .{config.problem.url()});
         const input = try getInput(global_allocator, config.problem);
         defer global_allocator.free(input);
         return runWithRawInput(config, solution, input);
     }
 
-    pub fn runWithRawInput(comptime config: Config, comptime solution: anytype, raw_input: []const u8) solutionOutput(solution) {
+    pub fn runWithRawInput(comptime config: Config, comptime solution: anytype, raw_input: []const u8) SolutionOutput(solution) {
         const input = try config.format.parseInput(config.input, global_allocator, raw_input);
         return solution(input);
     }
@@ -46,19 +46,23 @@ const Problem = struct {
 
 pub const InputFormat = union(enum) {
     pattern: []const u8,
+    custom: void,
+    tokens: []const u8,
 
     fn Output(comptime self: @This(), comptime T: type) type {
         switch (self) {
-            .pattern => return []const T,
+            .pattern => return []T,
+            .custom => return T,
+            .tokens => return []T,
         }
     }
 
     fn parseInput(comptime self: @This(), comptime T: type, alloc: *Allocator, raw: []const u8) !self.Output(T) {
+        const trimmed = std.mem.trimRight(u8, raw, &std.ascii.spaces);
+        if (trimmed.len == 0) return error.EmptyInput;
+
         switch (self) {
             .pattern => {
-                const trimmed = std.mem.trimRight(u8, raw, &std.ascii.spaces);
-                if (trimmed.len == 0) return error.EmptyInput;
-
                 const elements = std.mem.count(u8, trimmed, "\n") + 1;
                 var items = try alloc.alloc(T, elements);
                 var count: usize = 0;
@@ -74,6 +78,29 @@ pub const InputFormat = union(enum) {
 
                 return items;
             },
+
+            .custom => if (@hasDecl(T, "parse")) {
+                return T.parse(trimmed);
+            } else {
+                @compileError("expected type with `pub fn parse(text: []const u8) !@This()` decl");
+            },
+
+            .tokens => |delimeter| {
+                var tokens = std.mem.tokenize(u8, trimmed, delimeter);
+
+                var count: u32 = 0;
+                while (tokens.next() != null) : (count += 1) {}
+                tokens.reset();
+
+                var items = try alloc.alloc(T, count);
+                var i: u32 = 0;
+                while (tokens.next()) |token| : (i += 1) {
+                    const result = try parse.parseSingle(T, "", token);
+                    items[i] = result.value;
+                }
+
+                return items;
+            },
         }
     }
 
@@ -83,7 +110,7 @@ pub const InputFormat = union(enum) {
             .Struct => T,
             else => struct { value: T },
         };
-        const output = try parse.parsePattern(pattern, PatternStruct, line);
+        const output = try parse.parsePattern(PatternStruct, pattern, line);
         return if (PatternStruct == T) output else output.value;
     }
 };
@@ -93,7 +120,7 @@ const SolutionInfo = struct {
     output: type,
 };
 
-fn solutionOutput(comptime solution: anytype) type {
+fn SolutionOutput(comptime solution: anytype) type {
     const solution_type = @TypeOf(solution);
     const solution_info = @typeInfo(solution_type);
     const solution_fn = if (comptime solution_info == .Fn) solution_info.Fn else @compileError(std.fmt.comptimePrint("expected a function, found {}", .{solution_type}));
@@ -174,72 +201,10 @@ fn getSessionKey(alloc: *Allocator) ![]const u8 {
     };
 }
 
-pub const InputReader = struct {
-    bytes: []const u8,
-    trimmed: []const u8,
-    offset: usize = 0,
-
-    pub fn init(bytes: []const u8) @This() {
-        const trimmed = std.mem.trimRight(u8, bytes, &std.ascii.spaces);
-        return @This(){ .bytes = bytes, .trimmed = trimmed };
-    }
-
-    pub fn initFromStdIn(alloc: *Allocator) !@This() {
-        const input = std.io.getStdIn();
-        const size_hint = (try input.stat()).size;
-        const bytes = try input.readToEndAllocOptions(alloc, 1 << 20, size_hint, @alignOf(u8), null);
-        return @This().init(bytes);
-    }
-
-    pub fn deinit(self: *@This(), alloc: *Allocator) void {
-        alloc.free(self.bytes);
-    }
-
-    /// Caller borrows returned memory.
-    pub fn nextLine(self: *@This()) ?[]const u8 {
-        if (self.offset >= self.trimmed.len) {
-            return null;
-        }
-
-        if (std.mem.indexOfAnyPos(u8, self.trimmed, self.offset, "\n")) |index| {
-            const line = self.trimmed[self.offset..index];
-            self.offset = index + 1;
-            return line;
-        } else {
-            const line = self.trimmed[self.offset..];
-            self.offset = self.trimmed.len;
-            return line;
-        }
-    }
-
-    /// Caller borrows returned memory.
-    pub fn parseLines(self: *@This(), comptime pattern: []const u8, comptime Output: type) ParseLineIterator(pattern, Output) {
-        return .{ .input = self };
-    }
-
-    fn ParseLineIterator(comptime pattern: []const u8, comptime Output: type) type {
-        return struct {
-            input: *InputReader,
-
-            const PatternStruct = switch (@typeInfo(Output)) {
-                .Struct => Output,
-                else => struct { value: Output },
-            };
-            const Parser = parse.PatternParser(pattern, PatternStruct);
-
-            pub fn next(self: *@This()) !?Output {
-                const line = self.input.nextLine() orelse return null;
-
-                const output = try Parser.parse(line);
-                return if (PatternStruct == Output) output else output.value;
-            }
-
-            pub fn collectToSlice(self: *@This(), alloc: *Allocator) ![]Output {
-                var list = std.ArrayListUnmanaged(Output){};
-                defer list.deinit(alloc);
-                while (try self.next()) |value| try list.append(alloc, value);
-                return list.toOwnedSlice(alloc);
-            }
-        };
-    }
-};
+fn formatAlloc(alloc: *Allocator, comptime fmt: []const u8, args: anytype) ![]const u8 {
+    const size = std.fmt.count(fmt, args);
+    const buffer = try alloc.alloc(u8, size);
+    var stream = std.io.fixedBufferStream(buffer);
+    try std.fmt.format(stream.writer(), fmt, args);
+    return buffer;
+}

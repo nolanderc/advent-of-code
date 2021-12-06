@@ -3,20 +3,21 @@ const utils = @import("utils.zig");
 
 const alloc = utils.global_allocator;
 
+const config = utils.Config{
+    .problem = .{
+        .year = 2018,
+        .day = 2,
+    },
+    .input = []const u8,
+    .format = .{ .pattern = "{}" },
+};
+
 pub fn main() !void {
-    defer _ = utils.gpa.detectLeaks();
-    std.log.info("https://adventofcode.com/2018/day/2", .{});
-
-    var input = try utils.InputReader.initFromStdIn(alloc);
-    defer input.deinit(alloc);
-    var ids = try input.parseLines("{}", []const u8).collectToSlice(alloc);
-    defer alloc.free(ids);
-
-    std.log.info("part 1: {}", .{part1(ids)});
-    std.log.info("part 2: {s}", .{part2(ids)});
+    std.log.info("part 1: {}", .{config.run(part1)});
+    std.log.info("part 2: {s}", .{config.run(part2)});
 }
 
-fn part1(ids: [][]const u8) u32 {
+fn part1(ids: []const config.input) u32 {
     var num_2: u32 = 0;
     var num_3: u32 = 0;
 
@@ -40,7 +41,7 @@ fn part1(ids: [][]const u8) u32 {
     return num_2 * num_3;
 }
 
-fn part2(ids: [][]const u8) ?[2][]const u8 {
+fn part2(ids: []const config.input) ![]const u8 {
     for (ids) |a| {
         for (ids) |b| {
             if (a.ptr == b.ptr) continue;
@@ -56,9 +57,24 @@ fn part2(ids: [][]const u8) ?[2][]const u8 {
                 }
             }
 
-            if (diff_count == 1) return [_][]const u8{ a[0..diff_index], a[diff_index + 1 ..] };
+            if (diff_count == 1) {
+                return std.mem.concat(alloc, u8, &.{ a[0..diff_index], a[diff_index + 1 ..] });
+            }
         }
     }
 
-    return null;
+    return error.NoValidId;
+}
+
+test "part 2 sample" {
+    const sample =
+        \\abcde
+        \\fghij
+        \\klmno
+        \\pqrst
+        \\fguij
+        \\axcye
+        \\wvxyz
+    ;
+    try std.testing.expectEqualStrings(try config.runWithRawInput(part2, sample), "fgij");
 }

@@ -44,3 +44,24 @@ fn countIncreasingWindows(input: []const config.input, window_size: u32) u32 {
 
     return increases;
 }
+
+const sample =
+    \\199
+    \\200
+    \\208
+    \\210
+    \\200
+    \\207
+    \\240
+    \\269
+    \\260
+    \\263
+;
+
+test "part 1 sample" {
+    try std.testing.expectEqual(try config.runWithRawInput(part1, sample), 7);
+}
+
+test "part 2 sample" {
+    try std.testing.expectEqual(try config.runWithRawInput(part2, sample), 5);
+}
