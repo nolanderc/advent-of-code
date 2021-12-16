@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 pub const parse = @import("parse.zig");
 
 pub var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-pub const global_allocator = &gpa.allocator;
+pub const global_allocator: Allocator = gpa.allocator();
 
 pub const Config = struct {
     problem: Problem,
@@ -48,16 +48,18 @@ pub const InputFormat = union(enum) {
     pattern: []const u8,
     custom: void,
     tokens: []const u8,
+    raw: void,
 
     fn Output(comptime self: @This(), comptime T: type) type {
         switch (self) {
             .pattern => return []T,
             .custom => return T,
             .tokens => return []T,
+            .raw => return []const u8,
         }
     }
 
-    fn parseInput(comptime self: @This(), comptime T: type, alloc: *Allocator, raw: []const u8) !self.Output(T) {
+    fn parseInput(comptime self: @This(), comptime T: type, alloc: Allocator, raw: []const u8) !self.Output(T) {
         const trimmed = std.mem.trimRight(u8, raw, &std.ascii.spaces);
         if (trimmed.len == 0) return error.EmptyInput;
 
@@ -101,6 +103,11 @@ pub const InputFormat = union(enum) {
 
                 return items;
             },
+
+            .raw => {
+                if (T != []const u8) @compileError("input type must be `[]const u8`");
+                return trimmed;
+            },
         }
     }
 
@@ -131,7 +138,7 @@ fn SolutionOutput(comptime solution: anytype) type {
     }
 }
 
-fn getInput(alloc: *Allocator, comptime problem: Problem) ![]u8 {
+fn getInput(alloc: Allocator, comptime problem: Problem) ![]u8 {
     const path = problem.cachedPath();
     _ = alloc;
     if (std.fs.cwd().openFile(path, .{})) |file| {
@@ -169,7 +176,7 @@ fn cacheInput(comptime problem: Problem, bytes: []const u8) !void {
     std.log.info("cached `{s}`", .{path});
 }
 
-fn fetchInput(alloc: *Allocator, comptime problem: Problem) ![]u8 {
+fn fetchInput(alloc: Allocator, comptime problem: Problem) ![]u8 {
     const input_url = problem.inputUrl();
     std.log.info("fetching '{s}'...", .{input_url});
 
@@ -193,7 +200,7 @@ fn fetchInput(alloc: *Allocator, comptime problem: Problem) ![]u8 {
     }
 }
 
-fn getSessionKey(alloc: *Allocator) ![]const u8 {
+fn getSessionKey(alloc: Allocator) ![]const u8 {
     const name = "AOC_SESSION_KEY";
     return std.process.getEnvVarOwned(alloc, name) catch |err| {
         std.log.err("could not get `{s}`", .{name});
@@ -201,7 +208,7 @@ fn getSessionKey(alloc: *Allocator) ![]const u8 {
     };
 }
 
-fn formatAlloc(alloc: *Allocator, comptime fmt: []const u8, args: anytype) ![]const u8 {
+fn formatAlloc(alloc: Allocator, comptime fmt: []const u8, args: anytype) ![]const u8 {
     const size = std.fmt.count(fmt, args);
     const buffer = try alloc.alloc(u8, size);
     var stream = std.io.fixedBufferStream(buffer);

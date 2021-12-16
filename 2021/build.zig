@@ -1,7 +1,7 @@
 const std = @import("std");
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-var alloc = &gpa.allocator;
+var alloc = gpa.allocator();
 
 pub fn build(b: *std.build.Builder) anyerror!void {
     // Standard target options allows the person running `zig build` to choose
