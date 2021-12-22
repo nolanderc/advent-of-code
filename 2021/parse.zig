@@ -122,7 +122,8 @@ fn parseEnum(comptime T: type, comptime specifier: []const u8, text: []const u8)
 
 fn parseCustom(comptime T: type, comptime specifier: []const u8, text: []const u8) !ParseResult(T) {
     if (@hasDecl(T, "parse")) {
-        const value = try T.parse(specifier, text);
+        if (specifier.len != 0) @compileError("cannot use specifier `" ++ specifier ++ "` together with custom parser");
+        const value = try T.parse(text);
         if (@TypeOf(value) == ParseResult(T)) {
             return value;
         } else {
