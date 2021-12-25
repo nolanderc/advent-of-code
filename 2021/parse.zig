@@ -14,6 +14,8 @@ pub fn ParserOutput(comptime T: type) type {
 }
 
 pub fn parseSingle(comptime T: type, comptime specifier: []const u8, text: []const u8) !ParseResult(T) {
+    if (text.len == 0) return error.EndOfInput;
+
     const trait = std.meta.trait;
 
     if (comptime T == []const u8) {
@@ -116,6 +118,8 @@ fn parseEnum(comptime T: type, comptime specifier: []const u8, text: []const u8)
             };
         }
     }
+
+    std.log.err("not a valid {s}: '{s}'", .{ @typeName(T), text });
 
     return error.InvalidEnum;
 }
