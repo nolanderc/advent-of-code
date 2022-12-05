@@ -16,9 +16,7 @@ pub fn loadInput(path: []const u8) ![]const u8 {
     };
 
     const MiB = 1 << 20;
-    const text = try file.readToEndAlloc(alloc, 4 * MiB);
-
-    return std.mem.trim(u8, text, &std.ascii.whitespace);
+    return try file.readToEndAlloc(alloc, 4 * MiB);
 }
 
 /// Given the path to a source file `whatever/foo.zig`, returns the path of the input `whatever/foo.input`.
