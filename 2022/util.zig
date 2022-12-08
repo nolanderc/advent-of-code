@@ -30,7 +30,7 @@ pub fn inputPath(comptime source_path: []const u8) []const u8 {
 }
 
 pub fn parseInt(comptime T: type, text: []const u8, radix: u8) T {
-    return std.fmt.parseInt(u8, text, radix) catch |err| {
+    return std.fmt.parseInt(T, text, radix) catch |err| {
         std.debug.panic("could not parse `{s}`: {!}", .{ text, err });
     };
 }
@@ -91,4 +91,69 @@ fn matchFragments(comptime pattern: []const u8) [matchCount(pattern) + 1][]const
     }
     std.debug.assert(index == fragments.len);
     return fragments;
+}
+
+pub fn debugPrint(x: anytype, writer: anytype, indent: usize) @TypeOf(writer).Error!void {
+    const T = @TypeOf(x);
+    if (T == []u8 or T == []const u8) {
+        return writer.print("\"{s}\"", .{x});
+    }
+
+    const info = @typeInfo(T);
+    switch (info) {
+        .Struct => {
+            const names = comptime std.meta.fieldNames(T);
+            try writer.print("{{", .{});
+            inline for (names) |name| {
+                try writer.print("\n", .{});
+                try emitIndent(writer, indent + 2);
+                try writer.print(".{s} = ", .{name});
+                try debugPrint(@field(x, name), writer, indent + 2);
+                try writer.print(",", .{});
+            }
+            try writer.print("}}", .{});
+        },
+        .Union => {
+            const active = std.meta.activeTag(x);
+            switch (x) {
+                inline else => |inner| if (@TypeOf(inner) == void) {
+                    try writer.print(".{s}", .{@tagName(active)});
+                } else {
+                    try writer.print("{{ .{s} = ", .{@tagName(active)});
+                    try debugPrint(inner, writer, indent + 2);
+                    try writer.print(" }}", .{});
+                },
+            }
+        },
+        .Pointer => |data| {
+            switch (data.size) {
+                .Slice => {
+                    try writer.print("[", .{});
+                    for (x) |value| {
+                        try writer.print("\n", .{});
+                        try emitIndent(writer, indent + 2);
+                        try debugPrint(value, writer, indent + 2);
+                        try writer.print(",", .{});
+                    }
+                    try writer.print("]", .{});
+                },
+                .One => {
+                    try debugPrint(x.*, writer, indent);
+                },
+                else => try writer.print("{any}", .{x}),
+            }
+        },
+        else => try writer.print("{any}", .{x}),
+    }
+}
+
+fn emitIndent(writer: anytype, indent: usize) !void {
+    const buffer = [1]u8{' '} ** 256;
+    var remaining = indent;
+    while (remaining > 0) {
+        const amount = @min(remaining, buffer.len);
+        const spaces = buffer[0..amount];
+        try writer.writeAll(spaces);
+        remaining -= amount;
+    }
 }
