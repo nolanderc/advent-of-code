@@ -58,7 +58,7 @@ fn part2(input: []const u8) ![6 * (40 + 1)]u8 {
         while (latency > 0) : (latency -= 1) {
             const row = cycle / 40;
             const col = cycle % 40;
-            crt[41 * row + col] = if (col + 1 < x or x + 1 < col) ' ' else 'O';
+            crt[41 * row + col] = if (col + 1 < x or x + 1 < col) '.' else '#';
             cycle += 1;
         }
 

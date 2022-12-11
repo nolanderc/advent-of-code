@@ -31,7 +31,7 @@ pub fn inputPath(comptime source_path: []const u8) []const u8 {
 
 pub fn parseInt(comptime T: type, text: []const u8, radix: u8) T {
     return std.fmt.parseInt(T, text, radix) catch |err| {
-        std.debug.panic("could not parse `{s}`: {!}", .{ text, err });
+        std.debug.panic("could not parse `{any}`: {!}", .{ text, err });
     };
 }
 
