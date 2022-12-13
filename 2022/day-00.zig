@@ -24,10 +24,10 @@ const sample =
 
 test "part1" {
     std.testing.log_level = .info;
-    try std.testing.expectEqual(@as(i64, 2), try part1(sample));
+    try std.testing.expectEqual(@as(i64, 0), try part1(sample));
 }
 
 test "part2" {
     std.testing.log_level = .info;
-    try std.testing.expectEqual(@as(i64, 4), try part2(sample));
+    try std.testing.expectEqual(@as(i64, 0), try part2(sample));
 }

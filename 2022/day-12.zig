@@ -9,115 +9,96 @@ pub fn main() !void {
 }
 
 fn part1(input: []const u8) !i64 {
-    const Entry = struct {
-        pos: @Vector(2, i32),
-        distance: u16,
-
-        fn shortest(context: void, a: @This(), b: @This()) std.math.Order {
-            _ = context;
-            return std.math.order(a.distance, b.distance);
-        }
-    };
-
     const grid = try Grid.parse(input);
+    return try findPath(
+        grid,
+        grid.source,
+        struct {
+            target: @Vector(2, i32),
 
-    var entries = std.PriorityQueue(Entry, void, Entry.shortest).init(alloc, {});
-    try entries.ensureTotalCapacity(grid.width * grid.height);
-
-    var visited = try alloc.alloc(?u16, grid.width * grid.height);
-    std.mem.set(?u16, visited, null);
-
-    try entries.add(.{ .pos = grid.source, .distance = 0 });
-    while (entries.removeOrNull()) |current| {
-        if (@reduce(.And, current.pos == grid.target)) {
-            return current.distance;
-        }
-
-        const index = grid.index(current.pos) orelse std.debug.panic("position not on grid: {}", .{current.pos});
-        if (visited[index]) |*previous| {
-            if (current.distance >= previous.*) continue;
-            previous.* = current.distance;
-        } else {
-            visited[index] = current.distance;
-        }
-
-        const deltas: [4]@Vector(2, i32) = .{
-            .{ -1, 0 },
-            .{ 1, 0 },
-            .{ 0, -1 },
-            .{ 0, 1 },
-        };
-
-        const height = grid.heights[index];
-
-        inline for (deltas) |delta| {
-            const new = current.pos + delta;
-            if (grid.index(new)) |new_index| {
-                const new_height = grid.heights[new_index];
-                if (new_height <= height + 1) {
-                    try entries.add(.{ .pos = new, .distance = current.distance + 1 });
-                }
+            fn isTarget(self: @This(), pos: @Vector(2, i32), height: u8) bool {
+                _ = height;
+                return @reduce(.And, pos == self.target);
             }
-        }
-    }
 
-    std.debug.panic("could not find path to end", .{});
+            fn isEdge(self: @This(), height: u8, new_height: u8) bool {
+                _ = self;
+                return new_height <= height + 1;
+            }
+        }{ .target = grid.target },
+    ) orelse std.debug.panic("could not find path", .{});
 }
 
 fn part2(input: []const u8) !i64 {
-    const Entry = struct {
-        pos: @Vector(2, i32),
-        distance: u16,
-
-        fn shortest(context: void, a: @This(), b: @This()) std.math.Order {
-            _ = context;
-            return std.math.order(a.distance, b.distance);
-        }
-    };
-
     const grid = try Grid.parse(input);
+    return try findPath(
+        grid,
+        grid.target,
+        struct {
+            fn isTarget(self: @This(), pos: @Vector(2, i32), height: u8) bool {
+                _ = self;
+                _ = pos;
+                return height == 0;
+            }
 
-    var entries = std.PriorityQueue(Entry, void, Entry.shortest).init(alloc, {});
-    try entries.ensureTotalCapacity(grid.width * grid.height);
+            fn isEdge(self: @This(), height: u8, new_height: u8) bool {
+                _ = self;
+                return height <= new_height + 1;
+            }
+        }{},
+    ) orelse std.debug.panic("could not find path", .{});
+}
 
-    var visited = try alloc.alloc(?u16, grid.width * grid.height);
-    std.mem.set(?u16, visited, null);
+fn findPath(
+    grid: Grid,
+    source: @Vector(2, i32),
+    graph: anytype,
+) !?u32 {
+    var sources = std.ArrayList(@Vector(2, i32)).init(alloc);
+    var targets = std.ArrayList(@Vector(2, i32)).init(alloc);
 
-    try entries.add(.{ .pos = grid.target, .distance = 0 });
-    while (entries.removeOrNull()) |current| {
-        const index = grid.index(current.pos) orelse std.debug.panic("position not on grid: {}", .{current.pos});
-        const height = grid.heights[index];
+    try sources.ensureTotalCapacity(4 * grid.width * grid.height);
+    try targets.ensureTotalCapacity(4 * grid.width * grid.height);
 
-        if (height == 0) {
-            return current.distance;
-        }
+    var visited = try alloc.alloc(bool, grid.width * grid.height);
+    std.mem.set(bool, visited, false);
 
-        if (visited[index]) |*previous| {
-            if (current.distance >= previous.*) continue;
-            previous.* = current.distance;
-        } else {
-            visited[index] = current.distance;
-        }
+    var distance: u32 = 0;
 
-        const deltas: [4]@Vector(2, i32) = .{
-            .{ -1, 0 },
-            .{ 1, 0 },
-            .{ 0, -1 },
-            .{ 0, 1 },
-        };
+    try sources.append(source);
+    while (true) : (distance += 1) {
+        for (sources.items) |current| {
+            const index = grid.index(current) orelse std.debug.panic("position not on grid: {}", .{current});
+            const height = grid.heights[index];
 
-        inline for (deltas) |delta| {
-            const new = current.pos + delta;
-            if (grid.index(new)) |new_index| {
-                const new_height = grid.heights[new_index];
-                if (height <= new_height + 1) {
-                    try entries.add(.{ .pos = new, .distance = current.distance + 1 });
+            if (graph.isTarget(current, height)) return distance;
+
+            if (visited[index]) continue;
+            visited[index] = true;
+
+            const deltas: [4]@Vector(2, i32) = .{
+                .{ -1, 0 },
+                .{ 1, 0 },
+                .{ 0, -1 },
+                .{ 0, 1 },
+            };
+
+            inline for (deltas) |delta| {
+                const next = current + delta;
+                if (grid.index(next)) |next_index| {
+                    const next_height = grid.heights[next_index];
+                    if (graph.isEdge(height, next_height)) {
+                        try targets.append(next);
+                    }
                 }
             }
         }
+
+        sources.clearRetainingCapacity();
+        std.mem.swap(@TypeOf(sources), &sources, &targets);
     }
 
-    std.debug.panic("could not find path to end", .{});
+    return null;
 }
 
 const Grid = struct {
