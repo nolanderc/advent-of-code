@@ -54,12 +54,8 @@ fn part2(input: []const u8) !u64 {
     var buffer = try alloc.alloc(u8, input.len);
     for (packets.items) |packet, index| {
         const result = try std.fmt.bufPrint(buffer, "{}", .{packet});
-        if (std.mem.eql(u8, result, "[[2]]")) {
-            a = index + 1;
-        }
-        if (std.mem.eql(u8, result, "[[6]]")) {
-            b = index + 1;
-        }
+        if (std.mem.eql(u8, result, "[[2]]")) a = index + 1;
+        if (std.mem.eql(u8, result, "[[6]]")) b = index + 1;
     }
 
     return a * b;
