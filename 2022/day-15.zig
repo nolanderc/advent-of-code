@@ -35,7 +35,7 @@ fn part1(input: []const u8, row: i32) !u64 {
     var ranges = try std.ArrayList([2]i32).initCapacity(alloc, 2 * sensors.len);
 
     for (sensors) |sensor| {
-        if (try sensor.coveredRange(row)) |range| {
+        if (sensor.coveredRange(row)) |range| {
             if (sensor.beacon[1] == row) {
                 for (splitRange(range, sensor.beacon[0])) |subrange| {
                     try ranges.append(subrange orelse continue);
@@ -59,11 +59,11 @@ fn part2(input: []const u8, max_coord: i32) !u64 {
         ranges.clearRetainingCapacity();
 
         for (sensors) |sensor| {
-            var range = try sensor.coveredRange(row) orelse continue;
+            var range = sensor.coveredRange(row) orelse continue;
             // clamp the range within the covered rectangle
             range[0] = @max(range[0], 0);
             range[1] = @min(range[1], max_coord);
-            try ranges.append(range);
+            ranges.append(range) catch unreachable;
         }
 
         const covered = countCovered(ranges.items);
@@ -116,19 +116,27 @@ const Sensor = struct {
     position: Point,
     beacon: Point,
 
-    fn coveredRange(self: @This(), row: i32) !?[2]i32 {
-        const delta = self.beacon - self.position;
-        const distance = try std.math.absInt(delta[0]) + try std.math.absInt(delta[1]);
+    fn coveredRange(self: @This(), row: i32) ?[2]i32 {
+        const distance = self.radius();
 
-        const height = try std.math.absInt(self.position[1] - row);
+        const height = std.math.absCast(self.position[1] - row);
         if (height > distance) return null;
 
-        const span = distance - height;
+        const span = @intCast(i32, distance - height);
         const left = self.position[0] - span;
         const right = self.position[0] + span;
         return .{ left, right };
     }
+
+    fn radius(self: @This()) u32 {
+        return manhattan(self.position, self.beacon);
+    }
 };
+
+fn manhattan(a: Point, b: Point) u32 {
+    const delta = a - b;
+    return std.math.absCast(delta[0]) + std.math.absCast(delta[1]);
+}
 
 fn splitRange(range: [2]i32, mid: i32) [2]?[2]i32 {
     std.debug.assert(range[0] <= mid and mid <= range[1]);

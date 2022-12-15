@@ -4,16 +4,16 @@ const alloc = util.alloc;
 
 pub fn main() !void {
     const input = try util.loadInput(util.inputPath(@src().file));
-    std.log.info("part1: {}", .{try part1(input)});
-    std.log.info("part2: {}", .{try part2(input)});
+    std.debug.print("part1: {}\n", .{try part1(input)});
+    std.debug.print("part2: {}\n", .{try part2(input)});
 }
 
-fn part1(input: []const u8) !i64 {
+fn part1(input: []const u8) !u64 {
     _ = input;
     return 0;
 }
 
-fn part2(input: []const u8) !i64 {
+fn part2(input: []const u8) !u64 {
     _ = input;
     return 0;
 }
@@ -24,10 +24,10 @@ const sample =
 
 test "part1" {
     std.testing.log_level = .info;
-    try std.testing.expectEqual(@as(i64, 0), try part1(sample));
+    try std.testing.expectEqual(@as(u64, 0), try part1(sample));
 }
 
 test "part2" {
     std.testing.log_level = .info;
-    try std.testing.expectEqual(@as(i64, 0), try part2(sample));
+    try std.testing.expectEqual(@as(u64, 0), try part2(sample));
 }
