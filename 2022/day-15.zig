@@ -5,8 +5,10 @@ const alloc = util.alloc;
 pub fn main() !void {
     const input = try util.loadInput(util.inputPath(@src().file));
     const start = try std.time.Instant.now();
+
     std.debug.print("part1: {}\n", .{try part1(input, 2_000_000)});
     std.debug.print("part2: {}\n", .{try part2(input, 4_000_000)});
+
     const end = try std.time.Instant.now();
     var duration = @intToFloat(f64, end.since(start));
     var unit: []const u8 = "ns";

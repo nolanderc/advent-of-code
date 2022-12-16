@@ -6,8 +6,31 @@ pub const log_level = .info;
 
 pub fn main() !void {
     const input = try util.loadInput(util.inputPath(@src().file));
+    const start = try std.time.Instant.now();
+
     std.debug.print("part1: {}\n", .{try part1(input)});
     std.debug.print("part2: {}\n", .{try part2(input)});
+
+    const end = try std.time.Instant.now();
+    var duration = @intToFloat(f64, end.since(start));
+    var unit: []const u8 = "ns";
+
+    if (duration > 1000) {
+        duration /= 1000.0;
+        unit = "us";
+    }
+
+    if (duration > 1000) {
+        duration /= 1000.0;
+        unit = "ms";
+    }
+
+    if (duration > 1000) {
+        duration /= 1000.0;
+        unit = "s";
+    }
+
+    std.debug.print("time: {d:.3} {s}", .{ duration, unit });
 }
 
 fn part1(text: []const u8) !u64 {
@@ -60,126 +83,140 @@ fn part1(text: []const u8) !u64 {
 fn part2(text: []const u8) !u64 {
     const input = try Input.parse(text);
 
-    const flows = input.valves.items(.flow);
-    const tunnels = input.valves.items(.tunnels);
-    const masks = input.valves.items(.mask);
-    const open_state_count = @as(usize, 1) << @intCast(u5, input.openable);
+    const WorkData = struct {
+        flows: []u8,
+        tunnels: []std.BoundedArray(u8, 8),
+        masks: []u16,
+        valve_count: usize,
+
+        old_memo: []u16,
+        new_memo: []u16,
+
+        threads: usize,
+
+        barrier: *Barrier,
+
+        const Barrier = struct {
+            mutex: std.Thread.Mutex = .{},
+            condition: std.Thread.Condition = .{},
+            num_waiting: usize = 0,
+            version: u1 = 0,
+        };
+
+        fn execute(data: @This(), offset: usize, count: usize) void {
+            var old_memo = data.old_memo;
+            var new_memo = data.new_memo;
+            const valve_count = data.valve_count;
+
+            var time: u8 = 2;
+            while (time <= 26) : (time += 1) {
+                if (offset == 0) {
+                    std.debug.print("\r{}%", .{100 * @as(u32, time - 2) / 24});
+                }
+
+                var turn: u8 = 0;
+                while (turn < 2) : (turn += 1) {
+                    // compute the new flow
+                    var memo_index = offset;
+                    while (memo_index < offset + count) : (memo_index += 1) {
+                        // extract the parameters from the index
+                        var index = memo_index;
+
+                        const valve0 = index % valve_count;
+                        index /= valve_count;
+
+                        const valve1 = index % valve_count;
+                        index /= valve_count;
+
+                        const opened = index;
+
+                        const valve = if (turn == 0) valve0 else valve1;
+                        const flow = data.flows[valve];
+                        const mask = data.masks[valve];
+                        const adjacency = &data.tunnels[valve];
+
+                        var if_closed: u16 = 0;
+                        var if_opened: u16 = 0;
+
+                        for (adjacency.slice()) |adjacent| {
+                            var valves = [2]@TypeOf(valve0){ valve0, valve1 };
+                            valves[turn] = adjacent;
+                            const old_flow = old_memo[valves[0] + valve_count * (valves[1] + valve_count * opened)];
+                            if_closed = @max(if_closed, old_flow);
+                        }
+
+                        if (flow > 0 and mask & opened == 0) {
+                            if_opened += @as(u16, time - 1) * flow;
+                            const old_flow = old_memo[valve0 + valve_count * (valve1 + valve_count * (opened | mask))];
+                            if_opened += old_flow;
+                        }
+
+                        new_memo[memo_index] = @max(if_closed, if_opened);
+                    }
+
+                    std.mem.swap([]u16, &old_memo, &new_memo);
+                    data.sync();
+                }
+            }
+
+            if (offset == 0) {
+                std.debug.print("\r       \r", .{});
+            }
+        }
+
+        fn sync(self: @This()) void {
+            self.barrier.mutex.lock();
+            defer self.barrier.mutex.unlock();
+
+            self.barrier.num_waiting += 1;
+            if (self.barrier.num_waiting == self.threads) {
+                self.barrier.num_waiting = 0;
+                self.barrier.version ^= 1;
+                self.barrier.condition.broadcast();
+                return;
+            }
+
+            const version = self.barrier.version;
+            while (self.barrier.version == version) {
+                self.barrier.condition.wait(&self.barrier.mutex);
+            }
+        }
+    };
 
     const valve_count = input.valves.len;
+    const open_state_count = @as(usize, 1) << @intCast(u5, input.openable);
     const memo_size = valve_count * valve_count * open_state_count;
-    var old_memo = try alloc.alloc(u16, memo_size * 2);
-    var new_memo = try alloc.alloc(u16, memo_size * 2);
-    std.mem.set(u16, old_memo, 0);
 
-    std.log.info("memo_size: {}\n", .{memo_size});
+    var barrier = WorkData.Barrier{};
+    var data = WorkData{
+        .flows = input.valves.items(.flow),
+        .tunnels = input.valves.items(.tunnels),
+        .masks = input.valves.items(.mask),
+        .valve_count = valve_count,
+        .old_memo = try alloc.alloc(u16, memo_size),
+        .new_memo = try alloc.alloc(u16, memo_size),
+        .threads = std.Thread.getCpuCount() catch 1,
+        .barrier = &barrier,
+    };
+    std.mem.set(u16, data.old_memo, 0);
+    std.mem.set(u16, data.new_memo, 0);
 
-    var time: u8 = 2;
-    while (time <= 26) : (time += 1) {
-        std.debug.print("time: {}\n", .{time});
-
-        // compute the new flow
-        for (new_memo) |*new_flow, memo_index| {
-            // extract the parameters from the index
-            var index = memo_index;
-
-            const valve0 = index % valve_count;
-            index /= valve_count;
-
-            const valve1 = index % valve_count;
-            index /= valve_count;
-
-            const opened = index % open_state_count;
-            index /= open_state_count;
-
-            const turn = index % 2;
-
-            const valve = if (turn == 0) valve0 else valve1;
-            const flow = flows[valve];
-            const mask = masks[valve];
-            const adjacency = &tunnels[valve];
-
-            const prev_memo = if (turn == 0) old_memo[memo_size..] else new_memo[0..memo_size];
-
-            var if_closed: u16 = 0;
-            var if_opened: u16 = 0;
-
-            for (adjacency.slice()) |adjacent| {
-                var valves = [2]@TypeOf(valve0){ valve0, valve1 };
-                valves[turn] = adjacent;
-                const prev_flow = prev_memo[valves[0] + valve_count * (valves[1] + valve_count * opened)];
-                if_closed = @max(if_closed, prev_flow);
-            }
-
-            if (flow > 0 and mask & opened == 0) {
-                if_opened += @as(u16, time - 1) * flow;
-                const old_flow = prev_memo[valve0 + valve_count * (valve1 + valve_count * (opened | mask))];
-                if_opened += old_flow;
-            }
-
-            new_flow.* = @max(if_closed, if_opened);
-        }
-
-        std.mem.swap([]u16, &old_memo, &new_memo);
+    std.log.info("starting {} threads...", .{data.threads});
+    var threads = std.ArrayList(std.Thread).init(alloc);
+    var i: usize = 0;
+    const thread_size = memo_size / data.threads;
+    while (i < data.threads) : (i += 1) {
+        const size = if (i < data.threads - 1) thread_size else memo_size - (data.threads - 1) * thread_size;
+        const offset = i * thread_size;
+        const thread = try std.Thread.spawn(.{}, WorkData.execute, .{ data, offset, size });
+        try threads.append(thread);
     }
 
-    return old_memo[input.starting_room + valve_count * input.starting_room + memo_size];
-}
-
-const State2 = struct {
-    turn: u1,
-    rooms: [2]u8,
-    time: u8,
-    valves: u16,
-};
-
-const RoomData2 = struct {
-    memo: *std.AutoHashMap(State2, u64),
-    /// The flow in each room
-    flows: []u8,
-    /// The adjacent rooms
-    tunnels: []std.BoundedArray(u8, 8),
-    /// The index of the valve in the room
-    valve_masks: []u16,
-};
-
-// Given the current room, the remaining time, and the set of opened
-// valves, what is the maximum flow we could achieve?
-fn maxFlow2(data: RoomData2, current: State2) !u64 {
-    if (current.time <= 1) return 0;
-    if (data.memo.get(current)) |flow| return flow;
-
-    const room = current.rooms[current.turn];
-
-    const flow = data.flows[room];
-    const tunnels = data.tunnels[room].slice();
-
-    var if_closed: u64 = 0;
-    for (tunnels) |adjacent| {
-        var next = current;
-        next.rooms[current.turn] = adjacent;
-        next.turn = 1 - current.turn;
-        if (next.turn == 0) next.time -= 1;
-        if_closed = @max(if_closed, try maxFlow2(data, next));
+    for (threads.items) |thread| {
+        thread.join();
     }
 
-    var if_opened: u64 = 0;
-    if (flow > 0) {
-        const valve_mask = data.valve_masks[room];
-
-        if ((valve_mask & current.valves) == 0) {
-            if_opened = @as(u64, current.time - 1) * flow;
-
-            var next = current;
-            next.valves |= valve_mask;
-            next.turn = 1 - current.turn;
-            if (next.turn == 0) next.time -= 1;
-            if_opened += try maxFlow2(data, next);
-        }
-    }
-
-    const max_flow = @max(if_closed, if_opened);
-    try data.memo.putNoClobber(current, max_flow);
-    return max_flow;
+    return data.old_memo[input.starting_room + valve_count * input.starting_room];
 }
 
 const Valve = struct {
@@ -188,13 +225,6 @@ const Valve = struct {
     tunnel_labels: std.BoundedArray([2]u8, 8),
     tunnels: std.BoundedArray(u8, 8),
     mask: u16,
-};
-
-const Room = struct {
-    /// The amount of flow contributed by this room (never 0)
-    flow: u8,
-    /// For each other room, the distance to it
-    distances: std.BoundedArray(u8, 16),
 };
 
 const Input = struct {

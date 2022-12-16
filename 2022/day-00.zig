@@ -2,6 +2,8 @@ const std = @import("std");
 const util = @import("util.zig");
 const alloc = util.alloc;
 
+pub const log_level = .info;
+
 pub fn main() !void {
     const input = try util.loadInput(util.inputPath(@src().file));
     std.debug.print("part1: {}\n", .{try part1(input)});
