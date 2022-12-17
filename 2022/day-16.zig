@@ -30,7 +30,7 @@ pub fn main() !void {
         unit = "s";
     }
 
-    std.debug.print("time: {d:.3} {s}", .{ duration, unit });
+    std.log.info("time: {d:.3} {s}", .{ duration, unit });
 }
 
 fn part1(text: []const u8) !u64 {
