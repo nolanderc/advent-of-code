@@ -6,8 +6,10 @@ pub const log_level = .info;
 
 pub fn main() !void {
     const input = try util.loadInput(util.inputPath(@src().file));
+    const stopwatch = try util.Stopwatch.init();
     std.debug.print("part1: {}\n", .{try part1(input)});
     std.debug.print("part2: {}\n", .{try part2(input)});
+    std.debug.print("time: {}\n", .{stopwatch});
 }
 
 fn part1(input: []const u8) !u64 {

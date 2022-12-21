@@ -157,3 +157,42 @@ fn emitIndent(writer: anytype, indent: usize) !void {
         remaining -= amount;
     }
 }
+
+pub const Stopwatch = struct {
+    started: std.time.Instant,
+
+    pub fn init() !@This() {
+        return .{ .started = try std.time.Instant.now() };
+    }
+
+    pub fn format(
+        self: @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+
+        const end = std.time.Instant.now() catch self.started;
+        var duration = @intToFloat(f64, end.since(self.started));
+        var unit: []const u8 = "ns";
+
+        if (duration > 1000) {
+            duration /= 1000.0;
+            unit = "us";
+        }
+
+        if (duration > 1000) {
+            duration /= 1000.0;
+            unit = "ms";
+        }
+
+        if (duration > 1000) {
+            duration /= 1000.0;
+            unit = "s";
+        }
+
+        try writer.print("{d:.3} {s}", .{ duration, unit });
+    }
+};
