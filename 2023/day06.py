@@ -19,8 +19,11 @@ def solve(time, distance):
     a = time
     b = distance
     # Solve: -x**2 + ax - b > 0
-    x1 = int(math.ceil((a - math.sqrt(a*a - 4*b)) / 2))
-    x2 = int(math.floor((a + math.sqrt(a*a - 4*b)) / 2))
+    # Since we want strict inequality, we round no the next/previous integer.
+    # For example, if the solution is an integer, the answer to the inequality
+    # is actually one more than this integer.
+    x1 = int(math.floor((a - math.sqrt(a*a - 4*b)) / 2)) + 1
+    x2 = int(math.ceil((a + math.sqrt(a*a - 4*b)) / 2)) - 1
     return x2 - x1 + 1
 
 times, distances = sys.stdin.read().strip().splitlines()
