@@ -23,21 +23,20 @@ for history in histories:
     deltas = [history]
     while any(delta != 0 for delta in deltas[-1]):
         prev = deltas[-1]
-        new_delta = [prev[i] - prev[ i-1 ] for i in range(1, len(prev))]
-        deltas.append(new_delta)
+        deltas.append([prev[i] - prev[ i-1 ] for i in range(1, len(prev))])
 
     # Forwards
-    deltas[-1].append(0)
-    for i in reversed(range(1, len(deltas))):
-        deltas[i-1].append(deltas[i-1][-1] + deltas[i][-1])
+    next = 0
+    for i in reversed(range(len(deltas)-1)):
+        next = deltas[i][-1] + next
 
     # Backwards
-    deltas[-1].insert(0, 0)
-    for i in reversed(range(1, len(deltas))):
-        deltas[i-1].insert(0, deltas[i-1][0] - deltas[i][0])
+    prev = 0
+    for i in reversed(range(len(deltas)-1)):
+        prev = deltas[i][0] - prev
 
-    part1 += deltas[0][-1]
-    part2 += deltas[0][0]
+    part1 += next
+    part2 += prev
 
 print('part1', part1)
 print('part2', part2)
