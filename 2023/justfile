@@ -1,7 +1,9 @@
 
 run day:
+    clear
     ./input.sh 2023 {{day}} | python3 `printf "day%02d.py" {{day}}`
 
 test day:
+    clear
     python3 `printf "day%02d.py" {{day}}`
 
