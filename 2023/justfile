@@ -1,7 +1,14 @@
 
+all:
+    #!/usr/bin/bash
+    for day in `seq 25`; do
+        if [[ -f `printf "day%02d.py" $day` ]]; then
+            just run $day || exit 1
+        fi
+    done
+
 run day:
-    clear
-    ./input.sh 2023 {{day}} | python3 `printf "day%02d.py" {{day}}`
+    ./input.sh 2023 {{day}} | pypy3 `printf "day%02d.py" {{day}}`
 
 test day:
     clear
