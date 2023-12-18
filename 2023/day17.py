@@ -20,13 +20,12 @@ def find_loss(min_steps, max_steps):
         if 0 <= x < width and 0 <= y < height:
             cost = loss + grid[y][x]
             key = (x, y, dx, dy, steps)
-            if key in visited and cost >= visited[key]:
-                return
+            if key in visited and cost >= visited[key]: return
             visited[key] = cost
             queues[cost % 10].append(((x, y), dir, steps))
 
-    queues[loss % 10].append(((0, 0), (1, 0), 0))
-    queues[loss % 10].append(((0, 0), (0, 1), 0))
+    queues[0].append(((0, 0), (1, 0), 0))
+    queues[0].append(((0, 0), (0, 1), 0))
 
     while any(len(queue) > 0 for queue in queues):
         queue = queues[loss % 10]
