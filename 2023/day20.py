@@ -70,13 +70,13 @@ for _ in range(1000):
 
 print('part1', lows * highs)
 
-print('digraph {')
-for name, (kind, after) in modules.items():
-    if kind == 'broadcaster': kind = ''
-    print(' ', name, f'[label="{kind}{name}"]')
-for name, (kind, after) in modules.items():
-    print(' ', name, '->', '{', ' '.join(after), '}')
-print('}')
+# print('digraph {')
+# for name, (kind, after) in modules.items():
+#     if kind == 'broadcaster': kind = ''
+#     print(' ', name, f'[label="{kind}{name}"]')
+# for name, (kind, after) in modules.items():
+#     print(' ', name, '->', '{', ' '.join(after), '}')
+# print('}')
 
 clear_memory();
 

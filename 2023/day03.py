@@ -44,7 +44,7 @@ for symbol, row, col in symbols:
         if len(adjacent_symbols) == 2:
             part2 += adjacent_symbols[0] * adjacent_symbols[1]
 
-print(part1)
-print(part2)
+print('part1', part1)
+print('part2', part2)
 
 

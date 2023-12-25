@@ -29,5 +29,5 @@ for game in games:
 
     part2 += functools.reduce(lambda x, y: x*y, fewest_possible.values())
 
-print(part1)
-print(part2)
+print('part1', part1)
+print('part2', part2)

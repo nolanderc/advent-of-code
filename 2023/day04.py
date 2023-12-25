@@ -26,5 +26,5 @@ for line in lines:
     for i in range(card, card+matches):
         copies[i] += copies[card-1]
 
-print(part1)
-print(part2)
+print('part1', part1)
+print('part2', part2)
